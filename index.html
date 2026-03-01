@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>房源地圖系統 V11 | 新增排序功能</title>
+    <title>房源地圖系統 V12 | 新增人員定位</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
@@ -48,15 +48,21 @@
             </div>
         </div>
         
-        <div class="flex items-center gap-3">
-            <button id="btn-fix-coords" onclick="startClientSideGeocoding()" class="hidden bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition flex items-center gap-2 animate-bounce">
+        <div class="flex items-center gap-2">
+            <button id="btn-fix-coords" onclick="startClientSideGeocoding()" class="hidden bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded-lg text-sm font-bold shadow-md transition flex items-center gap-1 animate-bounce">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                <span id="btn-fix-text">修復缺座標資料</span>
+                <span id="btn-fix-text" class="hidden sm:inline">修復座標</span>
             </button>
 
-            <button onclick="fetchData()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+            <!-- ★ 新增：我的位置 (定位按鈕) -->
+            <button onclick="locateUser()" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s-8-4.5-8-11.8A8 8 0 0112 2a8 8 0 018 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
+                <span class="hidden sm:inline">我的位置</span>
+            </button>
+
+            <button onclick="fetchData()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                重新整理
+                <span class="hidden sm:inline">重新整理</span>
             </button>
         </div>
     </header>
@@ -71,7 +77,7 @@
                         class="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition">
                     <svg class="w-5 h-5 text-gray-400 absolute left-3 top-3 group-focus-within:text-blue-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
-                <!-- ★ 新增：排序選項 -->
+                <!-- 排序選項 -->
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-bold text-gray-500">排序方式</span>
                     <select id="sortSelect" class="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-1.5 outline-none transition cursor-pointer">
@@ -112,6 +118,7 @@
         let geocoder;
         let allProperties = [];
         let infoWindow;
+        let userLocationMarker = null; // 儲存使用者定位的圖釘
 
         function loadGoogleMaps() {
             const script = document.createElement('script');
@@ -136,6 +143,62 @@
             });
             geocoder = new google.maps.Geocoder();
             infoWindow = new google.maps.InfoWindow({ maxWidth: 280 });
+        }
+
+        // ★ 新增：取得使用者目前位置的功能
+        function locateUser() {
+            if (navigator.geolocation) {
+                // 要求取得位置
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const pos = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude,
+                        };
+
+                        // 將地圖中心移動到使用者位置，並放大
+                        map.setCenter(pos);
+                        map.setZoom(15);
+
+                        // 建立或更新使用者專屬的藍色圓點圖釘
+                        if (!userLocationMarker) {
+                            userLocationMarker = new google.maps.Marker({
+                                position: pos,
+                                map: map,
+                                title: "您的位置",
+                                icon: {
+                                    path: google.maps.SymbolPath.CIRCLE,
+                                    scale: 8,
+                                    fillColor: "#4285F4", // Google 經典藍色
+                                    fillOpacity: 1,
+                                    strokeColor: "white",
+                                    strokeWeight: 2,
+                                }
+                            });
+                        } else {
+                            userLocationMarker.setPosition(pos);
+                        }
+                        
+                        // 也可以加個小提示窗
+                        const userInfoWindow = new google.maps.InfoWindow({
+                            content: "<div class='p-1 text-sm font-bold text-blue-600'>您目前的位置</div>"
+                        });
+                        userLocationMarker.addListener("click", () => {
+                            userInfoWindow.open(map, userLocationMarker);
+                        });
+
+                    },
+                    (error) => {
+                        let msg = "無法取得您的位置。";
+                        if (error.code === 1) {
+                            msg = "定位權限被拒絕，請在瀏覽器設定中允許讀取位置資訊。";
+                        }
+                        alert(msg);
+                    }
+                );
+            } else {
+                alert("您的瀏覽器不支援地理定位功能。");
+            }
         }
 
         async function fetchData() {
@@ -190,7 +253,7 @@
                 const missingCount = allProperties.filter(p => !p.hasCoords && p.address).length;
                 if (missingCount > 0) {
                     btnFix.classList.remove('hidden');
-                    document.getElementById('btn-fix-text').innerText = `地圖上有 ${missingCount} 筆資料缺座標，點我修復`;
+                    document.getElementById('btn-fix-text').innerText = `修復 ${missingCount} 筆`;
                 } else {
                     btnFix.classList.add('hidden');
                 }
@@ -316,21 +379,18 @@
             if (validCount > 0) map.fitBounds(bounds);
         }
 
-        // ★ 新增：排序功能邏輯
+        // 排序功能邏輯
         function sortProperties() {
             const sortType = document.getElementById('sortSelect').value;
             
-            // 對資料陣列進行排序
             allProperties.sort((a, b) => {
                 let valA, valB;
                 switch(sortType) {
                     case 'price_asc':
-                        // 若無價格或面議，設定為極大值排在最後
                         valA = parseFloat(a.price) || 99999999;
                         valB = parseFloat(b.price) || 99999999;
                         return valA - valB;
                     case 'price_desc':
-                        // 若無價格，設定為 0 排在最後
                         valA = parseFloat(a.price) || 0;
                         valB = parseFloat(b.price) || 0;
                         return valB - valA;
@@ -344,12 +404,10 @@
                         return valA - valB;
                     case 'default':
                     default:
-                        // 依照原始讀取的順序還原
                         return a.originalIndex - b.originalIndex;
                 }
             });
             
-            // 將排序後的 DOM 元素重新附加到容器中 (高效率重新排列，不閃屏)
             const listContainer = document.getElementById('property-list');
             allProperties.forEach(prop => {
                 if (prop.listElement) {
@@ -358,7 +416,6 @@
             });
         }
 
-        // 監聽下拉選單變化
         document.getElementById('sortSelect').addEventListener('change', sortProperties);
 
         async function startClientSideGeocoding() {
@@ -385,7 +442,7 @@
             
             btnText.innerText = "修復完成！";
             setTimeout(() => { 
-                updateUI(); // 重新渲染列表與所有圖釘
+                updateUI();
                 btn.classList.add('hidden'); 
             }, 1000);
         }
@@ -411,12 +468,10 @@
                               prop.address.toLowerCase().includes(term) ||
                               prop.devName.toLowerCase().includes(term); 
                 
-                // 1. 隱藏/顯示對應的清單卡片
                 if (prop.listElement) {
                     prop.listElement.style.display = visible ? 'flex' : 'none';
                 }
                 
-                // 2. 隱藏/顯示對應的地圖圖釘
                 if (prop.marker) {
                     prop.marker.setVisible(visible);
                     if (visible) {
@@ -426,16 +481,24 @@
                 }
             });
 
-            // 調整地圖縮放以符合搜尋結果
+            // 如果也有使用者位置的圖釘，加到地圖邊界內
+            if (userLocationMarker && userLocationMarker.getVisible()) {
+                visibleBounds.extend(userLocationMarker.getPosition());
+            }
+
             if (hasVisibleMarker && term !== "") {
                 map.fitBounds(visibleBounds);
                 if (map.getZoom() > 16) map.setZoom(16);
             } else if (term === "" && allProperties.length > 0) {
-                // 清空搜尋時，重置回涵蓋所有物件
                 let allBounds = new google.maps.LatLngBounds();
                 allProperties.forEach(p => {
                     if(p.marker) allBounds.extend(p.marker.getPosition());
                 });
+                
+                if (userLocationMarker && userLocationMarker.getVisible()) {
+                    allBounds.extend(userLocationMarker.getPosition());
+                }
+
                 map.fitBounds(allBounds);
             }
         });
