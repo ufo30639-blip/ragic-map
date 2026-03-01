@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>房源地圖系統 V10 | 待租單純圖釘版</title>
+    <title>房源地圖系統 V11 | 新增排序功能</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
@@ -66,10 +66,21 @@
         <!-- 左側列表 -->
         <aside class="w-full md:w-[400px] bg-white border-r border-gray-200 flex flex-col z-10 transition-transform duration-300 absolute md:relative h-full transform -translate-x-full md:translate-x-0 shadow-xl md:shadow-none" id="sidebar">
             <div class="p-4 border-b border-gray-100 bg-white z-10">
-                <div class="relative group">
+                <div class="relative group mb-3">
                     <input type="text" id="searchInput" placeholder="搜尋社區、地址、業務..." 
                         class="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition">
                     <svg class="w-5 h-5 text-gray-400 absolute left-3 top-3 group-focus-within:text-blue-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <!-- ★ 新增：排序選項 -->
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-gray-500">排序方式</span>
+                    <select id="sortSelect" class="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-1.5 outline-none transition cursor-pointer">
+                        <option value="default">預設排序</option>
+                        <option value="price_asc">租金：由低到高</option>
+                        <option value="price_desc">租金：由高到低</option>
+                        <option value="size_desc">坪數：由大到小</option>
+                        <option value="size_asc">坪數：由小到大</option>
+                    </select>
                 </div>
             </div>
             <div id="property-list" class="flex-1 overflow-y-auto scroller bg-white">
@@ -141,9 +152,8 @@
                 const data = await response.json();
                 const rawList = Object.values(data);
                 
-                // 1. 資料清洗與轉換
-                // 2. ★ 過濾：只保留狀態包含「未出租」的資料
-                allProperties = rawList.map(item => {
+                // 過濾：只保留狀態包含「未出租」的資料
+                allProperties = rawList.map((item, idx) => {
                     const lat = parseFloat(item[F_ID_LAT]);
                     const lng = parseFloat(item[F_ID_LNG]);
                     const hasCoords = !isNaN(lat) && !isNaN(lng) && lat !== 0;
@@ -162,9 +172,18 @@
                         size: item[F_ID_SIZE] || '',
                         devName: item[F_ID_DEV_NAME] || '未指定',
                         devPhone: item[F_ID_DEV_PHONE] || '',
-                        marker: null // 預留存儲地圖標記的變數
+                        marker: null, // 預留存儲地圖標記的變數
+                        listElement: null // 預留存儲列表DOM的變數，用來進行排序優化
                     };
                 }).filter(p => p.status.includes('未出租'));
+
+                // 給定預設索引順序 (用於切換回預設排序)
+                allProperties.forEach((p, index) => {
+                    p.originalIndex = index;
+                });
+
+                // 重置排序選單
+                document.getElementById('sortSelect').value = 'default';
 
                 updateUI();
 
@@ -206,7 +225,6 @@
                 
                 el.className = `group p-4 border-b border-gray-100 bg-white hover:bg-blue-50/50 transition cursor-pointer relative ${prop.hasCoords ? '' : 'opacity-60 grayscale'}`;
                 
-                // 狀態標籤 (因為全都是未出租，統一為醒目的紅色)
                 const statusBadge = prop.hasCoords 
                     ? `<span class="absolute top-4 right-4 text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded-full border border-red-200 font-bold">${prop.status}</span>`
                     : `<span class="absolute top-4 right-4 text-[10px] bg-gray-200 text-gray-600 px-2 py-1 rounded-full font-bold border border-gray-300">缺座標</span>`;
@@ -226,7 +244,6 @@
                             <span class="font-bold text-red-500 text-lg">${priceFormatted}</span>
                         </div>
 
-                        <!-- 開發人員資訊區塊 -->
                         <div class="mt-3 pt-2 border-t border-gray-100 flex items-center gap-4 text-xs text-gray-500">
                             <div class="flex items-center gap-1" title="開發人員">
                                 <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
@@ -242,9 +259,11 @@
                     ${statusBadge}
                 `;
 
+                // ★ 儲存 DOM 元素參考，用來排序時高效率重繪
+                prop.listElement = el;
+
                 if (prop.hasCoords) {
                     validCount++;
-                    // ★ 使用最基礎預設的 Google Maps 小圖釘
                     prop.marker = new google.maps.Marker({
                         position: { lat: prop.lat, lng: prop.lng },
                         map: map,
@@ -253,7 +272,6 @@
 
                     prop.marker.addListener("click", () => {
                         const priceFormatted = prop.price ? `$${parseInt(prop.price).toLocaleString()}` : "面議";
-                        
                         const content = `
                             <div class="font-sans p-1 min-w-[200px]">
                                 <h3 class="font-bold text-gray-900 text-base truncate mb-1 pr-4">${prop.name}</h3>
@@ -298,6 +316,51 @@
             if (validCount > 0) map.fitBounds(bounds);
         }
 
+        // ★ 新增：排序功能邏輯
+        function sortProperties() {
+            const sortType = document.getElementById('sortSelect').value;
+            
+            // 對資料陣列進行排序
+            allProperties.sort((a, b) => {
+                let valA, valB;
+                switch(sortType) {
+                    case 'price_asc':
+                        // 若無價格或面議，設定為極大值排在最後
+                        valA = parseFloat(a.price) || 99999999;
+                        valB = parseFloat(b.price) || 99999999;
+                        return valA - valB;
+                    case 'price_desc':
+                        // 若無價格，設定為 0 排在最後
+                        valA = parseFloat(a.price) || 0;
+                        valB = parseFloat(b.price) || 0;
+                        return valB - valA;
+                    case 'size_desc':
+                        valA = parseFloat(a.size) || 0;
+                        valB = parseFloat(b.size) || 0;
+                        return valB - valA;
+                    case 'size_asc':
+                        valA = parseFloat(a.size) || 99999999;
+                        valB = parseFloat(b.size) || 99999999;
+                        return valA - valB;
+                    case 'default':
+                    default:
+                        // 依照原始讀取的順序還原
+                        return a.originalIndex - b.originalIndex;
+                }
+            });
+            
+            // 將排序後的 DOM 元素重新附加到容器中 (高效率重新排列，不閃屏)
+            const listContainer = document.getElementById('property-list');
+            allProperties.forEach(prop => {
+                if (prop.listElement) {
+                    listContainer.appendChild(prop.listElement);
+                }
+            });
+        }
+
+        // 監聽下拉選單變化
+        document.getElementById('sortSelect').addEventListener('change', sortProperties);
+
         async function startClientSideGeocoding() {
             const btn = document.getElementById('btn-fix-coords');
             const btnText = document.getElementById('btn-fix-text');
@@ -336,26 +399,26 @@
             });
         }
         
-        // ★ 搜尋功能：連動隱藏列表與地圖圖釘
+        // 搜尋功能：優化配合 DOM 連動
         document.getElementById('searchInput').addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
-            const items = document.getElementById('property-list').children;
             
             let visibleBounds = new google.maps.LatLngBounds();
             let hasVisibleMarker = false;
 
-            allProperties.forEach((prop, idx) => {
+            allProperties.forEach((prop) => {
                 const visible = prop.name.toLowerCase().includes(term) || 
                               prop.address.toLowerCase().includes(term) ||
                               prop.devName.toLowerCase().includes(term); 
                 
-                // 1. 控制左側列表顯示/隱藏
-                if (items[idx]) items[idx].style.display = visible ? 'flex' : 'none';
+                // 1. 隱藏/顯示對應的清單卡片
+                if (prop.listElement) {
+                    prop.listElement.style.display = visible ? 'flex' : 'none';
+                }
                 
-                // 2. 控制地圖圖釘顯示/隱藏
+                // 2. 隱藏/顯示對應的地圖圖釘
                 if (prop.marker) {
                     prop.marker.setVisible(visible);
-                    // 若顯示則加入範圍，方便自動縮放
                     if (visible) {
                         visibleBounds.extend(prop.marker.getPosition());
                         hasVisibleMarker = true;
@@ -363,14 +426,17 @@
                 }
             });
 
-            // (選用) 搜尋時若有符合條件的圖釘，將地圖縮放到剛好能顯示所有結果
-            // 如果搜尋文字清空，也會自動拉回顯示所有點位
-            if (hasVisibleMarker) {
+            // 調整地圖縮放以符合搜尋結果
+            if (hasVisibleMarker && term !== "") {
                 map.fitBounds(visibleBounds);
-                // 避免單一點位時縮放太近
-                if (map.getZoom() > 16) {
-                    map.setZoom(16);
-                }
+                if (map.getZoom() > 16) map.setZoom(16);
+            } else if (term === "" && allProperties.length > 0) {
+                // 清空搜尋時，重置回涵蓋所有物件
+                let allBounds = new google.maps.LatLngBounds();
+                allProperties.forEach(p => {
+                    if(p.marker) allBounds.extend(p.marker.getPosition());
+                });
+                map.fitBounds(allBounds);
             }
         });
 
