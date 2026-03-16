@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>房源地圖系統 V12 | 新增人員定位</title>
+    <title>房源地圖系統 V12 | 新增人員定位與 App 喚醒</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
@@ -54,7 +54,7 @@
                 <span id="btn-fix-text" class="hidden sm:inline">修復座標</span>
             </button>
 
-            <!-- ★ 新增：我的位置 (定位按鈕) -->
+            <!-- ★ 定位按鈕 -->
             <button onclick="locateUser()" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s-8-4.5-8-11.8A8 8 0 0112 2a8 8 0 018 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>
                 <span class="hidden sm:inline">我的位置</span>
@@ -118,7 +118,7 @@
         let geocoder;
         let allProperties = [];
         let infoWindow;
-        let userLocationMarker = null; // 儲存使用者定位的圖釘
+        let userLocationMarker = null;
 
         function loadGoogleMaps() {
             const script = document.createElement('script');
@@ -145,10 +145,8 @@
             infoWindow = new google.maps.InfoWindow({ maxWidth: 280 });
         }
 
-        // ★ 新增：取得使用者目前位置的功能
         function locateUser() {
             if (navigator.geolocation) {
-                // 要求取得位置
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         const pos = {
@@ -156,11 +154,9 @@
                             lng: position.coords.longitude,
                         };
 
-                        // 將地圖中心移動到使用者位置，並放大
                         map.setCenter(pos);
                         map.setZoom(15);
 
-                        // 建立或更新使用者專屬的藍色圓點圖釘
                         if (!userLocationMarker) {
                             userLocationMarker = new google.maps.Marker({
                                 position: pos,
@@ -169,7 +165,7 @@
                                 icon: {
                                     path: google.maps.SymbolPath.CIRCLE,
                                     scale: 8,
-                                    fillColor: "#4285F4", // Google 經典藍色
+                                    fillColor: "#4285F4",
                                     fillOpacity: 1,
                                     strokeColor: "white",
                                     strokeWeight: 2,
@@ -179,7 +175,6 @@
                             userLocationMarker.setPosition(pos);
                         }
                         
-                        // 也可以加個小提示窗
                         const userInfoWindow = new google.maps.InfoWindow({
                             content: "<div class='p-1 text-sm font-bold text-blue-600'>您目前的位置</div>"
                         });
@@ -215,7 +210,6 @@
                 const data = await response.json();
                 const rawList = Object.values(data);
                 
-                // 過濾：只保留狀態包含「未出租」的資料
                 allProperties = rawList.map((item, idx) => {
                     const lat = parseFloat(item[F_ID_LAT]);
                     const lng = parseFloat(item[F_ID_LNG]);
@@ -235,17 +229,15 @@
                         size: item[F_ID_SIZE] || '',
                         devName: item[F_ID_DEV_NAME] || '未指定',
                         devPhone: item[F_ID_DEV_PHONE] || '',
-                        marker: null, // 預留存儲地圖標記的變數
-                        listElement: null // 預留存儲列表DOM的變數，用來進行排序優化
+                        marker: null, 
+                        listElement: null
                     };
                 }).filter(p => p.status.includes('未出租'));
 
-                // 給定預設索引順序 (用於切換回預設排序)
                 allProperties.forEach((p, index) => {
                     p.originalIndex = index;
                 });
 
-                // 重置排序選單
                 document.getElementById('sortSelect').value = 'default';
 
                 updateUI();
@@ -265,7 +257,6 @@
         }
 
         function updateUI() {
-            // 清除現有標記
             allProperties.forEach(p => {
                 if (p.marker) p.marker.setMap(null);
             });
@@ -322,7 +313,6 @@
                     ${statusBadge}
                 `;
 
-                // ★ 儲存 DOM 元素參考，用來排序時高效率重繪
                 prop.listElement = el;
 
                 if (prop.hasCoords) {
@@ -335,6 +325,9 @@
 
                     prop.marker.addListener("click", () => {
                         const priceFormatted = prop.price ? `$${parseInt(prop.price).toLocaleString()}` : "面議";
+                        const webUrl = `https://ap12.ragic.com/xiangyu/forms2/48/${prop.id}`;
+                        const appUrl = `ragic://ap12.ragic.com/xiangyu/forms2/48/${prop.id}`;
+
                         const content = `
                             <div class="font-sans p-1 min-w-[200px]">
                                 <h3 class="font-bold text-gray-900 text-base truncate mb-1 pr-4">${prop.name}</h3>
@@ -353,7 +346,9 @@
                                     <span class="font-bold">${prop.devName}</span>
                                     <a href="tel:${prop.devPhone}" class="text-blue-600 hover:underline font-bold">${prop.devPhone}</a>
                                 </div>
-                                <a href="https://ap12.ragic.com/xiangyu/forms2/48/${prop.id}" target="_blank" class="block mt-2 text-center w-full bg-blue-600 text-white text-xs py-2 rounded hover:bg-blue-700 transition">開啟 Ragic 資料</a>
+                                
+                                <!-- ★ 智慧判斷單一按鈕 -->
+                                <button onclick="openRagicRecord('${webUrl}', '${appUrl}')" class="block w-full mt-2 text-center bg-blue-600 text-white text-xs py-2 rounded hover:bg-blue-700 transition shadow">開啟 Ragic 資料</button>
                             </div>
                         `;
                         infoWindow.setContent(content);
@@ -379,7 +374,6 @@
             if (validCount > 0) map.fitBounds(bounds);
         }
 
-        // 排序功能邏輯
         function sortProperties() {
             const sortType = document.getElementById('sortSelect').value;
             
@@ -456,7 +450,6 @@
             });
         }
         
-        // 搜尋功能：優化配合 DOM 連動
         document.getElementById('searchInput').addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
             
@@ -481,7 +474,6 @@
                 }
             });
 
-            // 如果也有使用者位置的圖釘，加到地圖邊界內
             if (userLocationMarker && userLocationMarker.getVisible()) {
                 visibleBounds.extend(userLocationMarker.getPosition());
             }
@@ -504,6 +496,27 @@
         });
 
         document.getElementById('toggleSidebar').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('-translate-x-full'));
+        
+        // ★ 新增：智慧判斷開啟方式 (App 喚醒與網頁版備案)
+        window.openRagicRecord = function(webUrl, appUrl) {
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                // 手機或平板：優先嘗試喚醒 App
+                window.location.href = appUrl;
+                
+                // 設定 1.5 秒延遲，如果沒有跳轉 (仍在網頁)，就開啟網頁版作為備案
+                setTimeout(() => {
+                    if (document.visibilityState === 'visible') {
+                        window.open(webUrl, '_blank');
+                    }
+                }, 1500);
+            } else {
+                // 電腦版：直接開新分頁進入網頁版
+                window.open(webUrl, '_blank');
+            }
+        };
+
         loadGoogleMaps();
     </script>
 </body>
